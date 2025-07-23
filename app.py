@@ -1,66 +1,50 @@
 import streamlit as st
 import requests
 
-# Title and Header
-st.set_page_config(page_title="🧠 AI Medical Chatbot", layout="centered")
-st.title("🩺 AI Medical Chatbot")
-st.markdown("Developed by Shehroz Khan Rind\n\nThis bot acts like a virtual doctor to ask questions and give a probable diagnosis.")
+st.set_page_config(page_title="🩺 AI Health Chatbot", layout="centered")
 
-# Session state for chat history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [
-        {"role": "system", "content":
-         "You are a virtual AI medical assistant. "
-         "Start by greeting the patient and asking about their symptoms. "
-         "Based on their replies, ask follow-up questions like duration, severity, location, and history. "
-         "After collecting enough information, provide a likely diagnosis and clear recommendation. "
-         "Keep asking until you feel confident to proceed to diagnosis. Respond clearly in simple language."}
-    ]
+st.markdown("<h1 style='text-align: center;'>🤖 AI Medical Assistant</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>I will ask relevant medical questions, analyze your responses, and suggest possible diagnoses and care tips.</p>", unsafe_allow_html=True)
 
-# Function to query OpenRouter (Mistral-7B Instruct Free)
-def ask_medical_bot(messages):
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": "Bearer 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",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
-        "messages": messages,
-        "temperature": 0.7
-    }
+API_KEY = st.secrets["OPENROUTER_API_KEY"]
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
 
-    response = requests.post(url, headers=headers, json=payload)
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+messages = st.session_state.get("messages", [])
 
-# Display chat history
-for chat in st.session_state.chat_history[1:]:
-    if chat["role"] == "user":
-        st.markdown(f"🧑‍⚕️ **You:** {chat['content']}")
-    else:
-        st.markdown(f"🤖 **AI Bot:** {chat['content']}")
+# Initial system message
+if not messages:
+    messages.append({"role": "system", "content": (
+        "You are an AI medical assistant. "
+        "Begin by asking the user about symptoms, age, duration, and any other necessary details. "
+        "Once enough information is gathered, provide a preliminary suggestion (not a diagnosis) and recommend next steps. "
+        "Be concise, medically appropriate, and use simple language."
+    )})
 
-# Text input
-user_input = st.text_input("Enter your reply or symptom here:", key="input")
+# Display chat
+for msg in messages[1:]:  # skip system message
+    st.chat_message(msg["role"]).markdown(msg["content"])
 
-# On submit
-if st.button("Send"):
-    if user_input:
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-        with st.spinner("AI is thinking..."):
-            ai_response = ask_medical_bot(st.session_state.chat_history)
-            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-            st.experimental_rerun()
+# User input
+if prompt := st.chat_input("Type your symptoms or questions..."):
+    messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").markdown(prompt)
 
-# Clear chat button
-if st.button("🔄 Start New Consultation"):
-    st.session_state.chat_history = [
-        {"role": "system", "content":
-         "You are a virtual AI medical assistant. "
-         "Start by greeting the patient and asking about their symptoms. "
-         "Based on their replies, ask follow-up questions like duration, severity, location, and history. "
-         "After collecting enough information, provide a likely diagnosis and clear recommendation. "
-         "Keep asking until you feel confident to proceed to diagnosis. Respond clearly in simple language."}
-    ]
-    st.experimental_rerun()
+    try:
+        payload = {
+            "model": "mistralai/mistral-7b-instruct:free",
+            "messages": messages,
+        }
+        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+        res.raise_for_status()
+        reply = res.json()["choices"][0]["message"]["content"]
+
+        messages.append({"role": "assistant", "content": reply})
+        st.chat_message("assistant").markdown(reply)
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+st.session_state["messages"] = messages
